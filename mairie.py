@@ -72,8 +72,6 @@ def main():
         
         print("-{}: maire: {}; url: {}".format(city["commune"], city["maire"], city["url"]))
 
-    print("Analysis : --- {} seconds --- {} Error(s)".format((time.time() - start_time), errors))
-
     # Create the output csv file
     create_csv(mairies)
 
@@ -85,18 +83,19 @@ def get_url(insee, cityname):
     cityname_url = unidecode(cityname.lower())
     for character in characters:
         cityname_url =  cityname_url.replace(character,"-")
-    url = "http://www.linternaute.com/ville/{}/ville-{}/mairie".format(cityname_url, insee)
+    url = "http://www.linternaute.com/ville/{}/ville-{}/mairie/".format(cityname_url, insee)
     return url
 
 
 def find_mayor(soup):
     # Search for mayor: (Monsieur ou madame) (a word) (- or " ") (a word with an Uppercase) (1 or 0 word with uppercase)
-    maire = re.search('(Monsieur |Madame )\w+[-\ ]([A-Z][a-z]+ )*[A-Z]+( [A-Z]+)*', str(soup))
+    #maire = re.search('(Monsieur |Madame )\w+[-\ ]([A-Z][a-z]+ )*[A-Z]+( [A-Z]+)*', str(soup))
+    maire = re.search('(Monsieur |Madame )\w+[-\ ]([A-ZÉÊË][a-z]+ )*[A-ZÉÊË]+( [A-ZÉÊË]+)*', str(soup))
     return "Mayor Not Found" if maire == None else maire.group()
 
 
 def find_phone(soup):
-    telephone = re.search('((\d{2}) ){4}(\d{2})', str(soup))
+    telephone = re.search('(\d{2} ){4}\d{2}', str(soup))
     return "Phone Not Found" if telephone == None else telephone.group()
 
 
