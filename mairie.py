@@ -4,6 +4,7 @@ import csv
 import time
 import requests
 from bs4 import BeautifulSoup as bs
+from unidecode import unidecode
 
 
 start_time = time.time()
@@ -12,16 +13,17 @@ def main():
     if not len(sys.argv) == 2:
         sys.exit("Usage: mairie.py datafile.csv")
 
-    # Initialize variables and tmp we need later   
+    # Initialize variable in case of error  
     dict_error = {
         "maire": "Not Found",
         "telephone": "Not Found",
         "horaires": "Not Found"
     }
+    errors = 0
 
     # Open CSV file and creates an array of dict "mairies" in witch the infos will go
     mairies = []
-    with open(sys.argv[1], "r") as csv_file:
+    with open(sys.argv[1], "r", encoding='utf-8') as csv_file:
         reader = csv.DictReader(csv_file, delimiter=';')
         for row in reader:
             # Create the URL to visit and adds it to the row
@@ -38,12 +40,14 @@ def main():
         # Skip if request give error code
         except requests.exceptions.RequestException:
             city.update(dict_error)
-            print("TimeOut or page not found")
+            errors += 1
+            print("→ Error 1: " + str(errors), end="--")
 
         # Skip if cannot connect to url
         if not page.status_code == requests.codes.ok:
             city.update(dict_error)
-            print("Error: URL Not Found")
+            errors += 1
+            print("→ Error 2: " + str(errors), end="--")
 
         # Proceed to look for info
         else:
@@ -52,40 +56,69 @@ def main():
             # Checks if good url
             if soup.title.text == "Erreur!":
                 city.update(dict_error)
-                print("Error: Wrong URL")
+                errors += 1
+                print("→ Error 3: " + str(errors), end="--")
             
             # Else proceeds with scraping
             else :
+                # Get the right div in the page
                 infosoup = soup.find("div", {"id": "mairie"})
-
-                # Search for mayor: (Monsieur ou madame) (a word) (- or " ") (a word with an Uppercase) (1 or 0 word with uppercase)
-                maire = re.search('(Monsieur |Madame )\w+[-\ ]([A-Z][a-z]+ )*[A-Z]+( [A-Z]+)*', str(infosoup))
-                city["maire"] = "Mayor Not Found" if maire == None else maire.group()
-
+                # Search for mayor
+                city["maire"] = find_mayor(infosoup)
                 # Search for phone nbr
-                telephone = re.search('((\d{2}) ){4}(\d{2})', str(infosoup))
-                city["telephone"] = "Phone Not Found" if telephone == None else telephone.group()
-
+                city["telephone"] = find_phone(infosoup)
                 # Search for opening hours
-                horairessoup = soup.find('h2', text = re.compile('Horaires')).next_sibling
-                horaires = " ".join(horairessoup.text.split())
-                city["horaires"] = horaires.split('ouverte : ')[1]
+                city["horaires"] = find_openhours(infosoup)
+        
+        print("-{}: maire: {}; url: {}".format(city["commune"], city["maire"], city["url"]))
 
-        print("Status: {}, {}, Mayor:{}, Tel: {}, Horaires: {}".format(page.status_code, city["commune"], city["maire"], city["telephone"], city["horaires"]))
+    print("Analysis : --- {} seconds --- {} Error(s)".format((time.time() - start_time), errors))
 
+    # Create the output csv file
+    create_csv(mairies)
 
-    
-    print("--- {} seconds ---".format(time.time() - start_time))
+    print("Complete : --- {} seconds --- {} Error(s)".format((time.time() - start_time), errors))
 
 
 def get_url(insee, cityname):
-    characters = [" ", "_"]
-    cityname_url = cityname.lower()
+    characters = [" ", "_", "'"]
+    cityname_url = unidecode(cityname.lower())
     for character in characters:
         cityname_url =  cityname_url.replace(character,"-")
-    url = "http://www.linternaute.com/ville/{}/ville-{}/mairie/".format(cityname_url, insee)
+    url = "http://www.linternaute.com/ville/{}/ville-{}/mairie".format(cityname_url, insee)
     return url
 
+
+def find_mayor(soup):
+    # Search for mayor: (Monsieur ou madame) (a word) (- or " ") (a word with an Uppercase) (1 or 0 word with uppercase)
+    maire = re.search('(Monsieur |Madame )\w+[-\ ]([A-Z][a-z]+ )*[A-Z]+( [A-Z]+)*', str(soup))
+    return "Mayor Not Found" if maire == None else maire.group()
+
+
+def find_phone(soup):
+    telephone = re.search('((\d{2}) ){4}(\d{2})', str(soup))
+    return "Phone Not Found" if telephone == None else telephone.group()
+
+
+def find_openhours(soup):  
+    try:
+        horairessoup = soup.find('h2', text = re.compile('Horaires')).next_sibling
+    except AttributeError:
+        return "Opening hours Not Found"
+
+    horaires = " ".join(horairessoup.text.split())
+    try:
+        return horaires.split('ouverte : ')[1]
+    except IndexError:
+        return "Opening hours Not Found"
+
+# Write CSV file from a "list_of_dict", each dict will be a line in output.csv
+def create_csv(list_of_dict):
+    with open('output.csv', 'w', encoding='utf-8') as file:
+        w = csv.DictWriter(file, list_of_dict[0].keys(), dialect='excel', delimiter=';', lineterminator = '\n')
+        w.writeheader()
+        for line in list_of_dict:
+            w.writerow(line)
 
 if __name__ == "__main__":
     main()
